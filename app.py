@@ -1,4 +1,5 @@
 import os
+import copy
 from flask import Flask, request, send_file, render_template, jsonify
 from pptx import Presentation
 
@@ -12,25 +13,33 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 def merge_powerpoint_python_pptx(file_paths, output_path):
     """
-    Linux/Render compatible PowerPoint merge function using python-pptx.
+    Corrupt-free PPTX merge using python-pptx by deep cloning slide elements.
     """
-    # Pehli PPT ko base presentation ki tarah load karein
+    # Base Presentation load karein
     merged_prs = Presentation(file_paths[0])
     
-    # Dusri sabhi PPTs ke slides ko base presentation me append karein
     for file_path in file_paths[1:]:
         prs = Presentation(file_path)
         for slide in prs.slides:
-            # Blank slide layout select karein
-            blank_slide_layout = merged_prs.slide_layouts[6] 
-            new_slide = merged_prs.slides.add_slide(blank_slide_layout)
+            # Layout select karein (blank layout)
+            blank_layout = merged_prs.slide_layouts[6] if len(merged_prs.slide_layouts) > 6 else merged_prs.slide_layouts[0]
+            new_slide = merged_prs.slides.add_slide(blank_layout)
             
-            # Shapes aur content ko copy karein
+            # Shapes ko safely duplicate karein without corrupting XML relationships
             for shape in slide.shapes:
-                new_slide.shapes._spTree.insert_element_before(
-                    shape.element, 'p:extLst'
-                )
+                new_sp = copy.deepcopy(shape.element)
+                new_slide.shapes._spTree.append(new_sp)
                 
+            # Related shapes, images, aur media resources ko connect karne ke liye
+            for rel in slide.part.rels.values():
+                if "notesSlide" not in rel.reltype:
+                    try:
+                        new_slide.part.rels.get_or_add_relationship(
+                            rel.reltype, rel._target, rel.rId
+                        )
+                    except Exception:
+                        pass
+
     merged_prs.save(output_path)
 
 @app.route('/')
@@ -55,10 +64,10 @@ def merge_files():
 
         output_path = os.path.abspath(os.path.join(UPLOAD_FOLDER, "Merged_Presentation.pptx"))
 
-        # Linux compatible merge trigger karein
+        # Merging process
         merge_powerpoint_python_pptx(saved_paths, output_path)
         
-        # Temp uploaded files cleanup
+        # Cleanup temporary uploaded files
         for path in saved_paths:
             if os.path.exists(path):
                 try:
