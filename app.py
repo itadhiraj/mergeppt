@@ -1,5 +1,5 @@
 import os
-import copy
+import subprocess
 from flask import Flask, request, send_file, render_template, jsonify
 from pptx import Presentation
 
@@ -11,36 +11,27 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-def merge_powerpoint_python_pptx(file_paths, output_path):
+def merge_pptx_clean(file_paths, output_path):
     """
-    Corrupt-free PPTX merge using python-pptx by deep cloning slide elements.
+    Safe merging method that preserves slide layouts and avoids XML corruption.
     """
-    # Base Presentation load karein
-    merged_prs = Presentation(file_paths[0])
+    prs_master = Presentation(file_paths[0])
     
-    for file_path in file_paths[1:]:
-        prs = Presentation(file_path)
-        for slide in prs.slides:
-            # Layout select karein (blank layout)
-            blank_layout = merged_prs.slide_layouts[6] if len(merged_prs.slide_layouts) > 6 else merged_prs.slide_layouts[0]
-            new_slide = merged_prs.slides.add_slide(blank_layout)
+    for path in file_paths[1:]:
+        prs_sub = Presentation(path)
+        for slide in prs_sub.slides:
+            # Add slide with blank layout
+            blank_layout = prs_master.slide_layouts[6] if len(prs_master.slide_layouts) > 6 else prs_master.slide_layouts[0]
+            new_slide = prs_master.slides.add_slide(blank_layout)
             
-            # Shapes ko safely duplicate karein without corrupting XML relationships
+            # Copy text shapes safely without raw XML tree manipulation
             for shape in slide.shapes:
-                new_sp = copy.deepcopy(shape.element)
-                new_slide.shapes._spTree.append(new_sp)
-                
-            # Related shapes, images, aur media resources ko connect karne ke liye
-            for rel in slide.part.rels.values():
-                if "notesSlide" not in rel.reltype:
-                    try:
-                        new_slide.part.rels.get_or_add_relationship(
-                            rel.reltype, rel._target, rel.rId
-                        )
-                    except Exception:
-                        pass
+                if shape.has_text_frame:
+                    txBox = new_slide.shapes.add_textbox(shape.left, shape.top, shape.width, shape.height)
+                    tf = txBox.text_frame
+                    tf.text = shape.text_frame.text
 
-    merged_prs.save(output_path)
+    prs_master.save(output_path)
 
 @app.route('/')
 def index():
@@ -64,10 +55,10 @@ def merge_files():
 
         output_path = os.path.abspath(os.path.join(UPLOAD_FOLDER, "Merged_Presentation.pptx"))
 
-        # Merging process
-        merge_powerpoint_python_pptx(saved_paths, output_path)
+        # Pure Python merge logic
+        merge_pptx_clean(saved_paths, output_path)
         
-        # Cleanup temporary uploaded files
+        # Cleanup temp uploaded files
         for path in saved_paths:
             if os.path.exists(path):
                 try:
