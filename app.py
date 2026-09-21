@@ -17,7 +17,7 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 def merge_powerpoint_optimized(file_paths, output_path):
     """
-    Linux / Render par python-pptx ka use karke slides ko bina corruption ke safely merge karna.
+    Linux / Render par images aur graphs ko retain karte hue presentations merge karna.
     """
     try:
         # Pehli presentation ko base presentation ki tarah open karein
@@ -28,19 +28,19 @@ def merge_powerpoint_optimized(file_paths, output_path):
             try:
                 current_pres = Presentation(file_path)
                 for slide in current_pres.slides:
-                    # Slide layout select karein (Index 0 ya blank layout)
-                    slide_layout = merged_pres.slide_layouts[6] if len(merged_pres.slide_layouts) > 6 else merged_pres.slide_layouts[0]
-                    new_slide = merged_pres.slides.add_slide(slide_layout)
+                    # Slide layout select karein (Blank layout index 6 ya 0)
+                    blank_layout = merged_pres.slide_layouts[6] if len(merged_pres.slide_layouts) > 6 else merged_pres.slide_layouts[0]
+                    new_slide = merged_pres.slides.add_slide(blank_layout)
                     
-                    # Shapes ke elements ko safely clone karke add karna taaki text loss na ho
-                    for shape in slide.slicers if hasattr(slide, 'slicers') else slide.shapes:
+                    # Shapes, Images aur Graphs/Charts ke elements ko safely clone karke add karna
+                    for shape in slide.shapes:
                         try:
-                            # XML element ko direct append karne ke bajaye element tree me clone karein
+                            # XML element ko clone karke append karna
                             el = shape.element
                             new_slide.shapes._spTree.append(el)
                         except Exception:
                             pass
-                
+                            
                 del current_pres
                 if i % 5 == 0:
                     gc.collect()
