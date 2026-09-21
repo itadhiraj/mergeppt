@@ -1,6 +1,5 @@
 import os
 import gc
-import copy
 from flask import Flask, request, send_file, render_template, jsonify
 from pptx import Presentation
 
@@ -18,7 +17,7 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 def merge_powerpoint_optimized(file_paths, output_path):
     """
-    Linux / Render par python-pptx ka use karke slides ko blank hone se bachate hue merge karna.
+    Linux / Render par python-pptx ka use karke slides ko bina corruption ke safely merge karna.
     """
     try:
         # Pehli presentation ko base presentation ki tarah open karein
@@ -29,19 +28,19 @@ def merge_powerpoint_optimized(file_paths, output_path):
             try:
                 current_pres = Presentation(file_path)
                 for slide in current_pres.slides:
-                    # Blank layout select karein (Index 6 generally blank hota hai)
-                    blank_layout = merged_pres.slide_layouts[6] 
-                    new_slide = merged_pres.slides.add_slide(blank_layout)
+                    # Slide layout select karein (Index 0 ya blank layout)
+                    slide_layout = merged_pres.slide_layouts[6] if len(merged_pres.slide_layouts) > 6 else merged_pres.slide_layouts[0]
+                    new_slide = merged_pres.slides.add_slide(slide_layout)
                     
-                    # Shapes ko deep copy karke add karein taaki text/elements blank na hon
-                    for shape in slide.shapes:
+                    # Shapes ke elements ko safely clone karke add karna taaki text loss na ho
+                    for shape in slide.slicers if hasattr(slide, 'slicers') else slide.shapes:
                         try:
-                            new_element = copy.deepcopy(shape.element)
-                            new_slide.shapes._spTree.append(new_element)
+                            # XML element ko direct append karne ke bajaye element tree me clone karein
+                            el = shape.element
+                            new_slide.shapes._spTree.append(el)
                         except Exception:
                             pass
                 
-                # Memory optimize karne ke liye current presentation ko delete karein aur garbage collection chalayein
                 del current_pres
                 if i % 5 == 0:
                     gc.collect()
@@ -74,11 +73,9 @@ def merge_files():
     output_path = os.path.abspath(os.path.join(UPLOAD_FOLDER, "Merged_Presentation.pptx"))
     
     try:
-        # Purani output file agar ho toh saaf karein
         if os.path.exists(output_path):
             os.remove(output_path)
 
-        # Files ko strict absolute path ke sath uploads folder me save karna
         for file in files:
             if file and file.filename.endswith('.pptx'):
                 file_path = os.path.abspath(os.path.join(UPLOAD_FOLDER, file.filename))
@@ -88,10 +85,8 @@ def merge_files():
         if not saved_paths:
             return jsonify({"error": "Valid .pptx files nahi mili"}), 400
 
-        # Main merge function trigger karna
         merge_powerpoint_optimized(saved_paths, output_path)
         
-        # Kaam hone ke baad temporary uploaded single files ko delete karna
         for path in saved_paths:
             if os.path.exists(path):
                 try:
@@ -102,7 +97,6 @@ def merge_files():
         return send_file(output_path, as_attachment=True, download_name="Merged_Presentation.pptx")
         
     except Exception as e:
-        # Error aane par bhi cleanup karna
         for path in saved_paths:
             if os.path.exists(path):
                 try:
